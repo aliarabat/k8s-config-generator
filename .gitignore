@@ -1,0 +1,7 @@
+# Out directory
+/out
+/src/out
+.env
+kubeconfig.yaml
+__pycache__
+templates/kubeconfig.yam
