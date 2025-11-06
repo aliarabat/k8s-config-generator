@@ -5,3 +5,4 @@
 kubeconfig.yaml
 __pycache__
 templates/kubeconfig.yam
+*/**.crt

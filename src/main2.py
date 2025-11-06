@@ -27,6 +27,7 @@ class k8s_config:
         self.verbs = args.verbs
 
         self.cluster_ca_cert_file = str(Path(__file__).parent / "ca.crt")
+        self.POSTGRES_PRIVATE_IP = "172.16.0.5"
 
     def generate_cluster_ca_cert(self):
         os.system(

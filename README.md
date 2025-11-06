@@ -6,17 +6,10 @@
 
 ## Requirements
 
-- A k8s cluster installed. See [microk8s](https://microk8s.io/) installation.
-- Enable Role Based Access Control (RBAC) on the cluster using the following command:
-
- ```bash
- sudo microk8s.enable rbac
- ```
-
 - Get cluster `kubeconfig.yaml` configuration file using the following command:
 
  ```bash
- microk8s config view
+ kubectl config view
  ```
 
  NOTE: Copy and paste the content of the output into a `kubeconfig.yaml` file.
@@ -52,8 +45,6 @@ cd src && KUBECONFIG=/path/to/kubeconfig.yaml python main2.py
 The command-line arguments are as follows:
 
 - `--out_directory`: The directory where the generated files will be saved.
-<!-- - `--namespace_count`: The number of namespaces to generate for each group. -->
-<!-- - `--group_count`: The number of groups to generate. -->
 - `--group`: The group number.
 - `--team`: The team number.
 - `--kubeconfig_path`: The path to the kubeconfig file.
