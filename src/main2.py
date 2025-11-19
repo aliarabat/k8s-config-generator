@@ -1,17 +1,18 @@
 import os
 import errno
 import base64
+import time
+import subprocess
 from pathlib import Path
+
 from generator.conf import conf_generator
 from generator.quota import quota_generator
 from generator.role import role_generator
 from generator.role_binding import role_binding_generator
-from generator.kubeconfig_template import generate_template
-from file_handle.file_handle import read_yaml, write_yaml
 from generator.namespace import namespace_generator
+from file_handle.file_handle import read_yaml, write_yaml
 from cli.cli2 import parse_arguments
-import subprocess
-import platform
+
 
 class k8s_config:
     def __init__(self):
@@ -30,13 +31,21 @@ class k8s_config:
         self.cluster_ca_cert_file = str(Path(__file__).parent / "ca.crt")
         self.POSTGRES_PRIVATE_IP = "172.16.0.5"
 
+    # ---------------------------
+    # GET CLUSTER CA CERTIFICATE
+    # ---------------------------
     def generate_cluster_ca_cert(self):
-        os.system(
-            "kubectl get cm kube-root-ca.crt -o jsonpath=\"{.data['ca\\.crt']}\" >" + self.cluster_ca_cert_file)
+        print("[INFO] Fetching Kubernetes cluster CA certificate...")
+        cmd = (
+            "kubectl get cm kube-root-ca.crt -o jsonpath=\"{.data['ca\\.crt']}\" > "
+            + self.cluster_ca_cert_file
+        )
+        os.system(cmd)
 
+    # ---------------------------
+    # ENTRYPOINT
+    # ---------------------------
     def generate(self):
-        # generate_template(self.kubeconfig_path)
-
         self.generate_cluster_ca_cert()
 
         team_name = f"grp0{self.group}eq{self.team}"
@@ -47,100 +56,123 @@ class k8s_config:
         self.team_permissions = f"{team_name}-permissions"
         self.team_quota = f"{team_name}-quota"
         self.team_csr = f"{team_name}-csr"
-        self.team_request = ""
-        self.team_cert = ""
-        self.team_key = ""
 
-        self.namespace_file = os.path.join(
-            self.out_path, "namespace.yaml")
+        print(f"[INFO] Team identifier: {self.team_name}")
+
+        self.namespace_file = os.path.join(self.out_path, "namespace.yaml")
         self.role_file = os.path.join(self.out_path, "role.yaml")
-        self.role_binding_file = os.path.join(
-            self.out_path, "role_binding.yaml")
+        self.role_binding_file = os.path.join(self.out_path, "role_binding.yaml")
         self.quota_file = os.path.join(self.out_path, "quota.yaml")
         self.crt_file = os.path.join(self.out_path, "kubecrt.crt")
         self.key_file = os.path.join(self.out_path, "kubekey.key")
         self.csr_file = os.path.join(self.out_path, "csr.csr")
         self.kubecsr_file = os.path.join(self.out_path, "kubecsr.yaml")
         self.conf_file = os.path.join(self.out_path, "kubecsr.csr.cnf")
-        self.kubeconf_file = os.path.join(
-            self.out_path, "kubeconf.yaml")
-        self.kubeconf_b64_file = os.path.join(
-            self.out_path, "kubeconf.b64")
-        print(self.team_name)
+        self.kubeconf_file = os.path.join(self.out_path, "kubeconf.yaml")
+        self.kubeconf_b64_file = os.path.join(self.out_path, "kubeconf.b64")
 
         self.setup()
         self.generate_files()
 
+    # ---------------------------
+    # CREATE DIRECTORIES
+    # ---------------------------
     def setup(self):
-        try:
-            os.mkdir(self.out)
-        except OSError as exc:
-            if exc.errno != errno.EEXIST:
-                raise
-            pass
+        for directory in [self.out, self.out_path]:
+            try:
+                os.mkdir(directory)
+            except OSError as exc:
+                if exc.errno != errno.EEXIST:
+                    raise
+                pass
 
-        try:
-            os.mkdir(os.path.join(self.out, self.team_name))
-        except OSError as exc:
-            if exc.errno != errno.EEXIST:
-                raise
-            pass
-
+    # ---------------------------
+    # CREATE CSR YAML
+    # ---------------------------
     def kubecsr(self):
         data = read_yaml("../templates/kubecsr.yaml")
         data["metadata"]["name"] = self.team_csr
         data["spec"]["request"] = self.team_request
         write_yaml(self.kubecsr_file, data)
 
+    # ---------------------------
+    # BUILD FINAL KUBECONFIG
+    # ---------------------------
     def kubeconfig(self):
-        data = read_yaml(Path(__file__).parent.parent / "kubeconfig.yaml")
-        cluster_info = data['clusters'][0]
-        cluster_name, server_ip = cluster_info['name'], cluster_info['cluster']['server']
-        # data["contexts"][0]["context"]["user"] = self.team_name
-        # data["contexts"][0]["context"].update({"namespace": self.team_namespace})
-        # data["users"][0]["name"] = self.team_name
-        # data["users"][0]["user"]["client-certificate-data"] = self.team_cert
-        # data["users"][0]["user"]["client-key-data"] = self.team_key
+        # Path(__file__).parent.parent / "kubeconfig.yaml"
+        template_path = Path(__file__).resolve().parent.parent / "kubeconfig.yaml"
+
+        if not template_path.exists():
+            raise FileNotFoundError(f"[ERROR] Missing kubeconfig.yaml template at: {template_path}")
+
+        print("[INFO] Loading kubeconfig template...")
+        data = read_yaml(template_path)
+
+        cluster_info = data["clusters"][0]
+        cluster_name = cluster_info["name"]
+        server_ip = cluster_info["cluster"]["server"]
+
+        print("[INFO] Generating kubeconfig...")
+
         os.system(
-            f"kubectl config set-cluster {cluster_name} --server={server_ip} --certificate-authority={self.cluster_ca_cert_file} --embed-certs=true --kubeconfig={self.kubeconf_file}"
+            f"kubectl config set-cluster {cluster_name} "
+            f"--server={server_ip} "
+            f"--certificate-authority={self.cluster_ca_cert_file} "
+            f"--embed-certs=true "
+            f"--kubeconfig={self.kubeconf_file}"
         )
 
         os.system(
-            f"kubectl config set-credentials {self.team_name} --client-certificate={self.crt_file} --client-key={self.key_file} --embed-certs=true --kubeconfig={self.kubeconf_file}"
+            f"kubectl config set-credentials {self.team_name} "
+            f"--client-certificate={self.crt_file} "
+            f"--client-key={self.key_file} "
+            f"--embed-certs=true "
+            f"--kubeconfig={self.kubeconf_file}"
         )
 
         os.system(
-            f"kubectl config set-context {self.team_name}-context --cluster={cluster_name} --namespace={self.team_namespace} --user={self.team_name} --kubeconfig={self.kubeconf_file}"
+            f"kubectl config set-context {self.team_name}-context "
+            f"--cluster={cluster_name} "
+            f"--namespace={self.team_namespace} "
+            f"--user={self.team_name} "
+            f"--kubeconfig={self.kubeconf_file}"
         )
 
         os.system(
-            f"kubectl config use-context {self.team_name}-context --kubeconfig={self.kubeconf_file}"
+            f"kubectl config use-context {self.team_name}-context "
+            f"--kubeconfig={self.kubeconf_file}"
         )
-        # write_yaml(self.kubeconf_file, data)
-        
+
+    # ---------------------------
+    # GENERATE CSR FILE
+    # ---------------------------
     def generate_csr(self):
         subj = f"/CN={self.team_name}"
-
-        # On Windows, openssl still accepts the string — no quoting issues with list mode
         cmd = [
             "openssl",
             "req",
             "-new",
             "-key", self.key_file,
             "-out", self.csr_file,
-            "-subj", subj,
+            "-subj", subj
         ]
 
-        # Run the command
         subprocess.run(cmd, check=True)
 
+    # ---------------------------
+    # GENERATE ALL FILES
+    # ---------------------------
     def generate_files(self):
+        # Namespace
         namespace = namespace_generator(
-            self.team_namespace, "../templates/namespace.yaml", self.namespace_file
+            self.team_namespace,
+            "../templates/namespace.yaml",
+            self.namespace_file
         )
         namespace.generate()
         namespace.apply()
 
+        # Quota
         quota = quota_generator(
             self.team_role,
             self.team_namespace,
@@ -149,7 +181,7 @@ class k8s_config:
             self.cpu_request,
             self.memory_request,
             self.cpu_limit,
-            self.memory_limit,
+            self.memory_limit
         )
         quota.generate()
         quota.apply()
@@ -157,43 +189,56 @@ class k8s_config:
         conf = conf_generator(self.team_name, self.conf_file)
         conf.generate()
 
+        # Generate private key
         os.system(f"openssl genrsa -out {self.key_file} 2048")
-        
+
+        # Generate CSR
         self.generate_csr()
 
-        crs_file_content = open(self.csr_file, "r").read()
-        crs_file_content_base64 = base64.b64encode(
-            crs_file_content.encode("ascii")).decode('ascii')
-        self.team_request = crs_file_content_base64.replace('\n', '')
+        csr_text = Path(self.csr_file).read_text()
+        csr_b64 = base64.b64encode(csr_text.encode()).decode()
+        self.team_request = csr_b64.replace("\n", "")
 
         self.kubecsr()
 
         os.system(f"kubectl create -f {self.kubecsr_file}")
         os.system(f"kubectl certificate approve {self.team_csr}")
 
-        os.system(
-            f"kubectl get csr {self.team_csr} -o jsonpath='{{.status.certificate}}' | base64 --decode > {self.crt_file}"
-        )
+        # Wait for certificate
+        print("[INFO] Waiting for Kubernetes to issue the certificate...")
+        cert = ""
+        for i in range(30):
+            cert = subprocess.getoutput(
+                f"kubectl get csr {self.team_csr} -o jsonpath='{{.status.certificate}}'"
+            ).strip()
 
+            if cert:
+                break
 
+            print(f"[INFO] Certificate not ready yet, retrying ({i+1}/30)...")
+            time.sleep(1)
+
+        if not cert:
+            raise Exception("[ERROR] Kubernetes did not issue certificate. Aborting.")
+
+        with open(self.crt_file, "wb") as f:
+            f.write(base64.b64decode(cert))
+
+        # Build kubeconfig
         self.kubeconfig()
 
-        # os.system(
-        #     f"kubectl create secret generic my-postgres-ip-secret --from-literal=db_host={self.POSTGRES_PRIVATE_IP} -n {self.team_namespace}"
-        # )
+        # Base64 encode kubeconfig
+        os.system(f"base64 -i {self.kubeconf_file} > {self.kubeconf_b64_file}")
+        print(f"[SUCCESS] kubeconfig base64 saved to: {self.kubeconf_b64_file}")
 
-        os.system(
-            f"base64 -i {self.kubeconf_file} > {self.kubeconf_b64_file}"
-        )
-        print(f"{self.kubeconf_b64_file} generated succesfully...")
-
+        # Role and role binding
         role = role_generator(
             self.team_role,
             self.team_namespace,
             "../templates/role.yaml",
             self.role_file,
             self.role_resources,
-            self.verbs,
+            self.verbs
         )
         role.generate()
         role.apply()
@@ -204,7 +249,7 @@ class k8s_config:
             self.team_name,
             self.team_role,
             "../templates/role_binding.yaml",
-            self.role_binding_file,
+            self.role_binding_file
         )
         role_binding.generate()
         role_binding.apply()
