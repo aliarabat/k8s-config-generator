@@ -4,31 +4,21 @@
 
 `k8s-config-generator` is a Python script that generates Kubernetes configuration files for a specified number of teams. The generated files include namespaces, roles, role bindings, quotas, and client certificates. The script takes command-line arguments to configure the generated files.
 
-## Requirements
+## Pour commencer
 
-- Get cluster `kubeconfig.yaml` configuration file using the following command:
-
- ```bash
- kubectl config view
- ```
-
- NOTE: Copy and paste the content of the output into a `kubeconfig.yaml` file.
-
-## Getting started
-
-1. Clone this repository to your local machine:
+1. Clonez ce dépôt sur votre machine locale :
 
     ```bash
     git clone https://github.com/<username>/k8s-config-generator.git
     ```
 
-2. Create and activate a virtual environment
+2. Créez et activez un environnement virtuel :
 
     ```bash
     python -m venv .env && source .env/bin/activate
     ```
 
-3. Install the required packages:
+3. Installez les dépendances requises :
 
     ```bash
     pip install -r requirements.txt
@@ -36,13 +26,21 @@
 
 ## Usage
 
-To use `k8s-config-generator`, run the following command:
+Déplacez-vous dans le répertoire principal de ce projet, puis exécutez la commande suivante :
 
-``` bash
-cd src && KUBECONFIG=/path/to/kubeconfig.yaml python main2.py
+```bash
+ kubectl config view >> kubeconfig.yaml
 ```
 
-The command-line arguments are as follows:
+Exécutez ensuite :
+
+```bash
+cd src && python main2.py
+```
+
+Vous pouvez conserver les valeurs par défaut en appuyant sur Entrée pour chaque option, depuis --kubeconfig_path jusqu’à la dernière.
+
+Les arguments de la ligne de commande sont les suivants :
 
 - `--out_directory`: The directory where the generated files will be saved.
 - `--group`: The group number.
