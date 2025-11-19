@@ -10,7 +10,8 @@ from generator.kubeconfig_template import generate_template
 from file_handle.file_handle import read_yaml, write_yaml
 from generator.namespace import namespace_generator
 from cli.cli2 import parse_arguments
-
+import subprocess
+import platform
 
 class k8s_config:
     def __init__(self):
@@ -116,6 +117,22 @@ class k8s_config:
             f"kubectl config use-context {self.team_name}-context --kubeconfig={self.kubeconf_file}"
         )
         # write_yaml(self.kubeconf_file, data)
+        
+    def generate_csr(self):
+        subj = f"/CN={self.team_name}"
+
+        # On Windows, openssl still accepts the string — no quoting issues with list mode
+        cmd = [
+            "openssl",
+            "req",
+            "-new",
+            "-key", self.key_file,
+            "-out", self.csr_file,
+            "-subj", subj,
+        ]
+
+        # Run the command
+        subprocess.run(cmd, check=True)
 
     def generate_files(self):
         namespace = namespace_generator(
@@ -141,9 +158,8 @@ class k8s_config:
         conf.generate()
 
         os.system(f"openssl genrsa -out {self.key_file} 2048")
-        os.system(
-            f"openssl req -new -key {self.key_file} -out {self.csr_file} -subj '/CN={self.team_name}'"
-        )
+        
+        self.generate_csr()
 
         crs_file_content = open(self.csr_file, "r").read()
         crs_file_content_base64 = base64.b64encode(
